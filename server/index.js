@@ -73,4 +73,4 @@ app.get('/reports', (req, res) => {
 });
 
 const PORT = 4000;
-app.listen(PORT, () => console.log(`Server rodando na http://localhost:${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server rodando em http://0.0.0.0:${PORT}`));
