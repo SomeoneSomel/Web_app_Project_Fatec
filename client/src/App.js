@@ -1,6 +1,21 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
+// pega ou cria um id único pra esse navegador
+function getOrCreateId() {
+  try {
+    let id = localStorage.getItem('ruaId');
+    if (!id) {
+      id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : ('id-' + Date.now() + '-' + Math.floor(Math.random()*1e6));
+      localStorage.setItem('ruaId', id);
+    }
+    return id;
+  } catch (e) {
+    return 'anon-' + Date.now();
+  }
+}
+const userId = getOrCreateId();
+
 function App(){
   const [view, setView] = useState('report'); // 'report' ou 'problems'
   const [file, setFile] = useState(null);
@@ -9,21 +24,27 @@ function App(){
   const [coords, setCoords] = useState({lat:'', lng:''});
   const [preview, setPreview] = useState(null);
 
+  // nome do reporter salvo no navegador
+  const [name, setName] = useState(() => {
+    try { return localStorage.getItem('ruaNome') || ''; } catch(e){ return ''; }
+  });
+
   // dados dos problemas (reports)
   const [problems, setProblems] = useState([]);
   const [loading, setLoading] = useState(false);
- const API = `${window.location.protocol}//${window.location.hostname}:4000`;
-
+  const [showAll, setShowAll] = useState(false); // ver só meus ou todos
+  const API = `${window.location.protocol}//${window.location.hostname}:4000`;
 
   useEffect(() => {
     if (view === 'problems') fetchProblems();
     // eslint-disable-next-line
-  }, [view]);
+  }, [view, showAll]);
 
   const fetchProblems = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/reports`);
+      const qs = showAll ? '' : `?ownerId=${encodeURIComponent(userId)}`;
+      const res = await fetch(`${API}/reports${qs}`);
       const data = await res.json();
       setProblems(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -47,26 +68,36 @@ function App(){
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!file) return alert('É necessario anexar uma foto do problema/incidente.');
+    if (!file) return alert('É necessário anexar uma foto do problema/incidente.');
     const fd = new FormData();
     fd.append('photo', file);
     fd.append('description', desc);
     fd.append('type', type_);
+    fd.append('reporter', name || '');
+    fd.append('reporterId', userId);
     if (coords.lat && coords.lng) {
       fd.append('lat', coords.lat);
       fd.append('lng', coords.lng);
     }
 
-    const res = await fetch(`${API}/reports`, {
-      method: 'POST',
-      body: fd
-    });
-    const data = await res.json();
-    if (!res.ok) return alert('Erro: ' + (data.error || 'unknown'));
-    alert('Reportagem de problema enviada com sucesso!');
-    setFile(null); setDesc(''); setPreview(null);
-    // se estiver na aba de problems, atualiza automaticamente
-    if (view === 'problems') fetchProblems();
+    try {
+      const res = await fetch(`${API}/reports`, {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) {
+        console.error('Erro do servidor', res.status, data);
+        return alert('Falha ao enviar: ' + (data.error || res.status));
+      }
+      alert('Reportagem de problema enviada com sucesso!');
+      setFile(null); setDesc(''); setPreview(null);
+      // atualiza lista se estiver na aba de problemas
+      if (view === 'problems') fetchProblems();
+    } catch (err) {
+      console.error('Erro na requisição:', err);
+      alert('Erro na requisição: ' + err.message);
+    }
   };
 
   return (
@@ -86,6 +117,18 @@ function App(){
       {view === 'report' && (
         <main className="card">
           <form onSubmit={submit} className="form">
+            <div className="row">
+              <label>Seu nome (opcional)</label>
+              <input
+                value={name}
+                onChange={e => {
+                  setName(e.target.value);
+                  try { localStorage.setItem('ruaNome', e.target.value); } catch(e){}
+                }}
+                placeholder="Ex: João, Maria, vó Ana..."
+              />
+            </div>
+
             <div className="row">
               <label>Tipo</label>
               <select value={type_} onChange={e=>setType(e.target.value)}>
@@ -122,8 +165,11 @@ function App(){
       {view === 'problems' && (
         <main className="card problems-card">
           <div className="problems-header">
-            <h2>Problemas reportados</h2>
-            <div>
+            <h2>{showAll ? 'Todos os Problemas' : 'Seus Problemas'}</h2>
+            <div style={{display:'flex', gap:8, alignItems:'center'}}>
+              <button className="btn ghost" onClick={() => { setShowAll(s => !s); }}>
+                {showAll ? 'Mostrar só meus' : 'Mostrar todos'}
+              </button>
               <button className="btn ghost" onClick={fetchProblems}>Atualizar</button>
             </div>
           </div>
@@ -138,7 +184,10 @@ function App(){
                   </div>
                   <div className="p-body">
                     <div className="p-meta">
-                      <strong className="p-type">{p.type}</strong>
+                      <div className="left-meta">
+                        <strong className="p-type">{p.type}</strong>
+                        <span className="p-reporter">por {p.reporter || 'Anônimo'}</span>
+                      </div>
                       <time>{new Date(p.createdAt).toLocaleString()}</time>
                     </div>
                     <p className="p-desc">{p.description || <span className="muted">Sem descrição</span>}</p>
