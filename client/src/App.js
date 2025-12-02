@@ -201,7 +201,7 @@ function App(){
       )}
 
       <footer className="footer">
-        <small>Prototype build - sem database no momento.</small>
+        <small>Prototype build - database aplicada parcialmente.</small>
       </footer>
     </div>
   );
